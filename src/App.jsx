@@ -186,7 +186,7 @@ function App() {
 
   // Forms
   const [propertyForm, setPropertyForm] = useState({ apartment_code: '', owner_name: '', phone: '' });
-  const [bankAccountForm, setBankAccountForm] = useState({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '' });
+  const [bankAccountForm, setBankAccountForm] = useState({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '', commission_percentage: '0,30', minimum_commission: '2,00' });
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', default_amount: '' });
   const [paymentForm, setPaymentForm] = useState({ 
     debt_id: '', 
@@ -459,11 +459,13 @@ function App() {
     try {
       const payload = {
         ...bankAccountForm,
-        balance: parseLocalFloat(bankAccountForm.balance)
+        balance: parseLocalFloat(bankAccountForm.balance),
+        commission_percentage: parseLocalFloat(bankAccountForm.commission_percentage),
+        minimum_commission: parseLocalFloat(bankAccountForm.minimum_commission)
       };
       const { error } = await supabase.from('bank_accounts').insert(payload);
       if (error) throw error;
-      setBankAccountForm({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '' });
+      setBankAccountForm({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '', commission_percentage: '0,30', minimum_commission: '2,00' });
       setModals({ ...modals, bankAccount: false });
       fetchData();
     } catch (err) {
@@ -520,10 +522,8 @@ function App() {
       const rate = parseFloat(paymentForm.exchange_rate) || 0;
       const computedAmount = rate ? (selectedDebt.amount * rate).toFixed(2) : '';
       
-      let computedComm = 0;
-      if (paymentForm.payment_method === 'Pago Móvil' && computedAmount) {
-        computedComm = Math.max(2.00, parseFloat(computedAmount) * 0.003).toFixed(2);
-      }
+      const val = parseFloat(computedAmount) || 0;
+      const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, paymentForm.payment_method);
 
       setPaymentForm({
         ...paymentForm,
@@ -541,15 +541,22 @@ function App() {
     }
   };
 
+  const calculateCommissionForAccount = (accountId, amountVal, method) => {
+    if (method !== 'Pago Móvil' || !amountVal) return '0.00';
+    const account = bankAccounts.find(acc => acc.id === parseInt(accountId));
+    const pct = account && account.commission_percentage !== undefined ? parseFloat(account.commission_percentage) / 100 : 0.003;
+    const min = account && account.minimum_commission !== undefined ? parseFloat(account.minimum_commission) : 2.00;
+    
+    return Math.max(min, amountVal * pct).toFixed(2);
+  };
+
   const handlePaymentRateChange = (rateStr) => {
     const rate = parseFloat(rateStr) || 0;
     const selectedDebt = debts.find(d => d.id === parseInt(paymentForm.debt_id));
     const computedAmount = (selectedDebt && rate) ? (selectedDebt.amount * rate).toFixed(2) : '';
     
-    let computedComm = 0;
-    if (paymentForm.payment_method === 'Pago Móvil' && computedAmount) {
-      computedComm = Math.max(2.00, parseFloat(computedAmount) * 0.003).toFixed(2);
-    }
+    const val = parseFloat(computedAmount) || 0;
+    const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, paymentForm.payment_method);
 
     setPaymentForm({
       ...paymentForm,
@@ -562,10 +569,7 @@ function App() {
   const handlePaymentAmountChange = (amountStr) => {
     const masked = maskCurrency(amountStr);
     const val = parseLocalFloat(masked);
-    let computedComm = 0;
-    if (paymentForm.payment_method === 'Pago Móvil' && val) {
-      computedComm = Math.max(2.00, val * 0.003).toFixed(2);
-    }
+    const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, paymentForm.payment_method);
 
     setPaymentForm({
       ...paymentForm,
@@ -575,15 +579,23 @@ function App() {
   };
 
   const handlePaymentMethodChange = (method) => {
-    let computedComm = 0;
     const val = parseLocalFloat(paymentForm.amount_paid);
-    if (method === 'Pago Móvil' && val) {
-      computedComm = Math.max(2.00, val * 0.003).toFixed(2);
-    }
+    const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, method);
 
     setPaymentForm({
       ...paymentForm,
       payment_method: method,
+      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+    });
+  };
+
+  const handlePaymentBankAccountChange = (bankAccountId) => {
+    const val = parseLocalFloat(paymentForm.amount_paid);
+    const computedComm = calculateCommissionForAccount(bankAccountId, val, paymentForm.payment_method);
+
+    setPaymentForm({
+      ...paymentForm,
+      bank_account_id: bankAccountId,
       commission: computedComm ? maskCurrency(computedComm) : '0,00'
     });
   };
@@ -1651,6 +1663,28 @@ function App() {
                   onChange={(e) => setBankAccountForm({ ...bankAccountForm, balance: maskCurrency(e.target.value) })}
                 />
               </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Comisión Pago Móvil (%)</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="Ej: 0,30"
+                    value={bankAccountForm.commission_percentage}
+                    onChange={(e) => setBankAccountForm({ ...bankAccountForm, commission_percentage: e.target.value })}
+                  />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Comisión Mínima (Bs.)</label>
+                  <input 
+                    type="text" 
+                    className="form-input" 
+                    placeholder="Ej: 2,00"
+                    value={bankAccountForm.minimum_commission}
+                    onChange={(e) => setBankAccountForm({ ...bankAccountForm, minimum_commission: e.target.value })}
+                  />
+                </div>
+              </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setModals({ ...modals, bankAccount: false })}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">Crear Cuenta</button>
@@ -1753,7 +1787,7 @@ function App() {
                   className="form-select" 
                   required
                   value={paymentForm.bank_account_id}
-                  onChange={(e) => setPaymentForm({ ...paymentForm, bank_account_id: e.target.value })}
+                  onChange={(e) => handlePaymentBankAccountChange(e.target.value)}
                 >
                   <option value="">-- Selecciona la cuenta bancaria --</option>
                   {bankAccounts.map((acc) => (
