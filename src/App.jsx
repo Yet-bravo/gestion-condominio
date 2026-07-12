@@ -1225,9 +1225,12 @@ function App() {
           <div>
             <div className="page-header">
               <div>
-                <h1 className="page-title">Casas Registradas (40 en total)</h1>
+                <h1 className="page-title">Casas Registradas ({properties.length} en total)</h1>
                 <p className="page-subtitle">Visualiza la lista de viviendas y sus copropietarios</p>
               </div>
+              <button className="btn btn-primary" onClick={handleOpenAddProperty}>
+                <Plus size={18} /> Nueva Casa
+              </button>
             </div>
 
             <div className="glass-card">
