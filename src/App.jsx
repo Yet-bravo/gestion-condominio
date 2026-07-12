@@ -858,6 +858,209 @@ function App() {
     });
   };
 
+  const handleExportPDF = (serviceId) => {
+    const service = services.find(s => s.id === serviceId);
+    if (!service) return;
+
+    const serviceDebts = debts.filter(d => d.service_id === serviceId);
+    const paidDebts = serviceDebts.filter(d => d.status === 'paid');
+    const pendingDebts = serviceDebts.filter(d => d.status === 'pending');
+
+    // Calculate totals
+    const totalUSD = paidDebts.reduce((sum, d) => sum + d.amount, 0);
+    const totalBs = paidDebts.reduce((sum, d) => {
+      const pay = payments.find(p => p.debt_id === d.id);
+      return sum + (pay ? parseFloat(pay.amount_paid) : 0);
+    }, 0);
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      openNotif('No se pudo abrir la ventana de impresión. Por favor, permite las ventanas emergentes.');
+      return;
+    }
+
+    const htmlContent = `
+      <html>
+        <head>
+          <title>Reporte - ${service.name}</title>
+          <style>
+            body {
+              font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+              color: #333;
+              padding: 20px;
+              line-height: 1.5;
+            }
+            .header {
+              text-align: center;
+              border-bottom: 2px solid #2e7d32;
+              padding-bottom: 15px;
+              margin-bottom: 25px;
+            }
+            .title {
+              font-size: 24px;
+              font-weight: bold;
+              color: #1b5e20;
+              margin: 0;
+            }
+            .subtitle {
+              font-size: 14px;
+              color: #666;
+              margin: 5px 0 0 0;
+            }
+            .summary-cards {
+              display: flex;
+              gap: 20px;
+              margin-bottom: 30px;
+            }
+            .card {
+              flex: 1;
+              border: 1px solid #e0e0e0;
+              border-radius: 8px;
+              padding: 15px;
+              background-color: #f9f9f9;
+            }
+            .card-title {
+              font-size: 12px;
+              color: #777;
+              text-transform: uppercase;
+              font-weight: 600;
+              margin-bottom: 5px;
+            }
+            .card-value {
+              font-size: 20px;
+              font-weight: bold;
+              color: #333;
+            }
+            .section-title {
+              font-size: 16px;
+              font-weight: bold;
+              color: #2e7d32;
+              border-bottom: 1px solid #e0e0e0;
+              padding-bottom: 5px;
+              margin-top: 25px;
+              margin-bottom: 15px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-bottom: 20px;
+              font-size: 13px;
+            }
+            th, td {
+              border: 1px solid #e0e0e0;
+              padding: 8px 12px;
+              text-align: left;
+            }
+            th {
+              background-color: #f5f5f5;
+              font-weight: 600;
+            }
+            .badge-paid {
+              color: #2e7d32;
+              font-weight: bold;
+            }
+            .badge-pending {
+              color: #c62828;
+              font-weight: bold;
+            }
+            .text-right {
+              text-align: right;
+            }
+            @media print {
+              body { padding: 0; }
+              .no-print { display: none; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="title">REPORTE DE COBROS Y PAGOS</div>
+            <div class="subtitle">${service.name}</div>
+            <div style="font-size: 12px; color: #888; margin-top: 8px;">Fecha de Generación: ${new Date().toLocaleDateString('es-VE')}</div>
+          </div>
+
+          <div class="summary-cards">
+            <div class="card">
+              <div class="card-title">Total Recibido (USD)</div>
+              <div class="card-value">${totalUSD.toFixed(2)} $</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Total Recibido (Bs.)</div>
+              <div class="card-value">${new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(totalBs)} Bs.</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Casas Solventes</div>
+              <div class="card-value">${paidDebts.length} / ${serviceDebts.length}</div>
+            </div>
+            <div class="card">
+              <div class="card-title">Casas Pendientes</div>
+              <div class="card-value">${pendingDebts.length}</div>
+            </div>
+          </div>
+
+          <div class="section-title">PROPIETARIOS SOLVENTES (${paidDebts.length})</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 20%;">Casa</th>
+                <th style="width: 35%;">Copropietario</th>
+                <th style="width: 25%;" class="text-right">Monto Recibido (Bs.)</th>
+                <th style="width: 20%;">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${paidDebts.map(d => {
+                const pay = payments.find(p => p.debt_id === d.id);
+                const amountBs = pay ? new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(pay.amount_paid) + ' Bs.' : '-';
+                return `
+                  <tr>
+                    <td><strong>${d.apartment_code}</strong></td>
+                    <td>${d.owner_name}</td>
+                    <td class="text-right">${amountBs}</td>
+                    <td><span class="badge-paid">Pagado</span></td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <div class="section-title">PROPIETARIOS PENDIENTES POR PAGAR (${pendingDebts.length})</div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 20%;">Casa</th>
+                <th style="width: 50%;">Copropietario</th>
+                <th style="width: 30%;">Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${pendingDebts.map(d => `
+                <tr>
+                  <td><strong>${d.apartment_code}</strong></td>
+                  <td>${d.owner_name}</td>
+                  <td><span class="badge-pending">Pendiente (${d.amount.toFixed(2)} $)</span></td>
+                </tr>
+              `).join('')}
+              ${pendingDebts.length === 0 ? '<tr><td colspan="3" style="text-align: center; color: #777;">No hay propietarios pendientes.</td></tr>' : ''}
+            </tbody>
+          </table>
+
+          <script>
+            window.onload = function() {
+              window.print();
+              window.onafterprint = function() {
+                window.close();
+              };
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+  };
+
   const handleDeleteProperty = (id) => {
     openConfirm(
       '¿Seguro que deseas eliminar esta propiedad? Se borrarán todas sus deudas asociadas.',
@@ -1520,16 +1723,27 @@ function App() {
                       </button>
                     )}
                   </div>
-                  <select 
-                    className="form-select" 
-                    style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
-                    value={debtFilter}
-                    onChange={(e) => setDebtFilter(e.target.value)}
-                  >
-                    <option value="all">Ver Todas</option>
-                    <option value="pending">Pendientes</option>
-                    <option value="paid">Solventes</option>
-                  </select>
+                  <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                    {selectedServiceId && (
+                      <button 
+                        className="btn btn-emerald" 
+                        style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+                        onClick={() => handleExportPDF(selectedServiceId)}
+                      >
+                        <FileSpreadsheet size={16} /> Exportar Reporte PDF
+                      </button>
+                    )}
+                    <select 
+                      className="form-select" 
+                      style={{ padding: '0.35rem 0.75rem', fontSize: '0.85rem' }}
+                      value={debtFilter}
+                      onChange={(e) => setDebtFilter(e.target.value)}
+                    >
+                      <option value="all">Ver Todas</option>
+                      <option value="pending">Pendientes</option>
+                      <option value="paid">Solventes</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="table-wrapper">
