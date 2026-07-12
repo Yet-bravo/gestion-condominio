@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 import { 
   LayoutDashboard, 
   Building2, 
@@ -21,10 +20,14 @@ import {
 } from 'lucide-react';
 import { Chart as ChartJS, ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement } from 'chart.js';
 import { Doughnut, Bar } from 'react-chartjs-2';
+import { createClient } from '@supabase/supabase-js';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
 
-const API_URL = '/api';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://hulaqkvbbzdrailrcoih.supabase.co';
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1bGFxa3ZiYnpkcmFpbHJjb2loIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4Mzc5MzE3MiwiZXhwIjoyMDk5MzY5MTcyfQ.tYZTXteH4AHVLcfcurGbjh-B03hHbJQ7eIfg4fIK4M0';
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const parseLocalFloat = (val) => {
   if (typeof val === 'number') return val;
@@ -133,9 +136,10 @@ function App() {
 
   const handleSyncBcvRate = async () => {
     try {
-      const res = await axios.get('https://ve.dolarapi.com/v1/dolares/oficial');
-      if (res.data && res.data.promedio) {
-        const rate = res.data.promedio.toString();
+      const res = await fetch('https://ve.dolarapi.com/v1/dolares/oficial');
+      const data = await res.json();
+      if (data && data.promedio) {
+        const rate = data.promedio.toString();
         setBcvRate(rate);
         localStorage.setItem('condo_bcv_rate', rate);
       }
@@ -208,28 +212,182 @@ function App() {
   const fetchData = async () => {
     if (!currentUser) return;
     try {
-      const summaryUrl = startDate && endDate 
-        ? `${API_URL}/dashboard/summary?startDate=${startDate}&endDate=${endDate}` 
-        : `${API_URL}/dashboard/summary`;
-        
-      const [sumRes, propRes, bankRes, servRes, debtRes, payRes, expRes] = await Promise.all([
-        axios.get(summaryUrl),
-        axios.get(`${API_URL}/properties`),
-        axios.get(`${API_URL}/bank-accounts`),
-        axios.get(`${API_URL}/services`),
-        axios.get(`${API_URL}/debts`),
-        axios.get(`${API_URL}/payments`),
-        axios.get(`${API_URL}/expenses`)
-      ]);
-      setSummary(sumRes.data);
-      setProperties(propRes.data);
-      setBankAccounts(bankRes.data);
-      setServices(servRes.data);
-      setDebts(debtRes.data);
-      setPayments(payRes.data);
-      setExpenses(expRes.data);
+      // 1. Fetch properties
+      const { data: propertiesData, error: propErr } = await supabase.from('properties').select('*');
+      if (propErr) throw propErr;
+      propertiesData.sort((a, b) => {
+        const numA = parseInt(a.apartment_code.substring(5)) || 0;
+        const numB = parseInt(b.apartment_code.substring(5)) || 0;
+        return numA - numB;
+      });
+
+      // 2. Fetch bank accounts
+      const { data: bankAccountsData, error: bankErr } = await supabase.from('bank_accounts').select('*').order('id', { ascending: true });
+      if (bankErr) throw bankErr;
+
+      // 3. Fetch services
+      const { data: servicesData, error: servErr } = await supabase.from('services').select('*').order('id', { ascending: true });
+      if (servErr) throw servErr;
+
+      // 4. Fetch debts
+      const { data: rawDebts, error: debtErr } = await supabase.from('debts').select(`
+        *,
+        properties (apartment_code, owner_name),
+        services (name)
+      `);
+      if (debtErr) throw debtErr;
+
+      const debtsData = rawDebts.map(d => ({
+        id: d.id,
+        property_id: d.property_id,
+        service_id: d.service_id,
+        amount: d.amount,
+        status: d.status,
+        created_at: d.created_at,
+        apartment_code: d.properties?.apartment_code,
+        owner_name: d.properties?.owner_name,
+        service_name: d.services?.name
+      }));
+      debtsData.sort((a, b) => {
+        const numA = parseInt(a.apartment_code?.substring(5)) || 0;
+        const numB = parseInt(b.apartment_code?.substring(5)) || 0;
+        if (numA !== numB) return numA - numB;
+        return new Date(b.created_at) - new Date(a.created_at);
+      });
+
+      // 5. Fetch payments
+      const { data: rawPayments, error: payErr } = await supabase.from('payments').select(`
+        *,
+        debts (
+          property_id,
+          service_id,
+          properties (apartment_code, owner_name),
+          services (name)
+        ),
+        bank_accounts (bank_name, account_holder, currency)
+      `).order('payment_date', { ascending: false }).order('id', { ascending: false });
+      if (payErr) throw payErr;
+
+      const paymentsData = rawPayments.map(pay => ({
+        id: pay.id,
+        debt_id: pay.debt_id,
+        bank_account_id: pay.bank_account_id,
+        amount_paid: pay.amount_paid,
+        payment_date: pay.payment_date,
+        payment_method: pay.payment_method,
+        reference_number: pay.reference_number,
+        exchange_rate: pay.exchange_rate,
+        commission: pay.commission,
+        created_at: pay.created_at,
+        apartment_code: pay.debts?.properties?.apartment_code,
+        owner_name: pay.debts?.properties?.owner_name,
+        service_name: pay.debts?.services?.name,
+        bank_name: pay.bank_accounts?.bank_name,
+        account_holder: pay.bank_accounts?.account_holder,
+        account_currency: pay.bank_accounts?.currency
+      }));
+
+      // 6. Fetch expenses
+      const { data: rawExpenses, error: expErr } = await supabase.from('expenses').select(`
+        *,
+        bank_accounts (bank_name, account_holder, currency)
+      `).order('expense_date', { ascending: false }).order('id', { ascending: false });
+      if (expErr) throw expErr;
+
+      const expensesData = rawExpenses.map(e => ({
+        id: e.id,
+        bank_account_id: e.bank_account_id,
+        description: e.description,
+        amount: e.amount,
+        payment_method: e.payment_method,
+        commission: e.commission,
+        expense_date: e.expense_date,
+        reference_number: e.reference_number,
+        created_at: e.created_at,
+        bank_name: e.bank_accounts?.bank_name,
+        account_holder: e.bank_accounts?.account_holder,
+        account_currency: e.bank_accounts?.currency
+      }));
+
+      // 7. Calculate Dashboard Summary values locally
+      let totalBs = 0;
+      let totalUsd = 0;
+      bankAccountsData.forEach(acc => {
+        if (acc.currency === 'Bs') totalBs += acc.balance;
+        else if (acc.currency === 'USD' || acc.currency === '$') totalUsd += acc.balance;
+      });
+
+      const totalPendingDebt = debtsData.filter(d => d.status === 'pending').reduce((sum, d) => sum + d.amount, 0);
+
+      // Filter payments and expenses by date range for the summary if defined
+      let filteredPayments = paymentsData;
+      let filteredExpenses = expensesData;
+      if (startDate && endDate) {
+        filteredPayments = paymentsData.filter(p => p.payment_date >= startDate && p.payment_date <= endDate);
+        filteredExpenses = expensesData.filter(e => e.expense_date >= startDate && e.expense_date <= endDate);
+      }
+
+      const totalPaymentsBs = filteredPayments.reduce((sum, p) => sum + p.amount_paid, 0);
+      
+      // Sum the debt amount (USD) corresponding to the paid debts
+      let totalPaymentsUsd = 0;
+      filteredPayments.forEach(p => {
+        const matchingRawPay = rawPayments.find(rp => rp.id === p.id);
+        if (matchingRawPay && matchingRawPay.debts) {
+          totalPaymentsUsd += matchingRawPay.debts.amount || 0;
+        }
+      });
+
+      const totalExpenses = filteredExpenses.reduce((sum, e) => sum + e.amount + (e.commission || 0), 0);
+
+      const totalProperties = propertiesData.length;
+      const propertiesWithDebt = new Set(debtsData.filter(d => d.status === 'pending').map(d => d.property_id)).size;
+      const propertiesUpToDate = Math.max(0, totalProperties - propertiesWithDebt);
+
+      // Recent Activity
+      const mappedRecentPayments = filteredPayments.map(p => ({
+        type: 'income',
+        amount: p.amount_paid,
+        date: p.payment_date,
+        detail: `${p.apartment_code || ''} - ${p.owner_name || ''}`,
+        concept: p.service_name || 'Servicio',
+        account_currency: p.account_currency
+      }));
+
+      const mappedRecentExpenses = filteredExpenses.map(e => ({
+        type: 'expense',
+        amount: e.amount + (e.commission || 0),
+        date: e.expense_date,
+        detail: e.description + (e.commission ? ` (Comisión: ${e.commission} Bs.)` : ''),
+        concept: 'Gasto Común',
+        account_currency: e.account_currency
+      }));
+
+      const recentActivity = [...mappedRecentPayments, ...mappedRecentExpenses]
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+      const recentActivitySliced = startDate ? recentActivity : recentActivity.slice(0, 5);
+
+      setSummary({
+        totalBs,
+        totalUsd,
+        totalPendingDebt,
+        totalPaymentsBs,
+        totalPaymentsUsd,
+        totalExpenses,
+        totalProperties,
+        propertiesUpToDate,
+        propertiesWithDebt,
+        recentActivity: recentActivitySliced
+      });
+
+      setProperties(propertiesData);
+      setBankAccounts(bankAccountsData);
+      setServices(servicesData);
+      setDebts(debtsData);
+      setPayments(paymentsData);
+      setExpenses(expensesData);
     } catch (err) {
-      console.error('Error fetching data:', err);
+      console.error('Error fetching data from Supabase:', err);
     }
   };
 
@@ -242,11 +400,16 @@ function App() {
     e.preventDefault();
     setLoginError('');
     try {
-      const res = await axios.post(`${API_URL}/login`, loginForm);
-      setCurrentUser(res.data);
-      localStorage.setItem('condo_user', JSON.stringify(res.data));
+      const { data: user, error } = await supabase.from('users').select('*').eq('username', loginForm.username).eq('password', loginForm.password).maybeSingle();
+      if (error) throw error;
+      if (!user) {
+        setLoginError('Credenciales incorrectas');
+        return;
+      }
+      setCurrentUser(user);
+      localStorage.setItem('condo_user', JSON.stringify(user));
     } catch (err) {
-      setLoginError(err.response?.data?.error || 'Error al iniciar sesión');
+      setLoginError(err.message || 'Error al iniciar sesión');
     }
   };
 
@@ -260,16 +423,18 @@ function App() {
     e.preventDefault();
     try {
       if (editingPropertyId) {
-        await axios.put(`${API_URL}/properties/${editingPropertyId}`, propertyForm);
+        const { error } = await supabase.from('properties').update(propertyForm).eq('id', editingPropertyId);
+        if (error) throw error;
       } else {
-        await axios.post(`${API_URL}/properties`, propertyForm);
+        const { error } = await supabase.from('properties').insert(propertyForm);
+        if (error) throw error;
       }
       setPropertyForm({ apartment_code: '', owner_name: '', phone: '' });
       setEditingPropertyId(null);
       setModals({ ...modals, property: false });
       fetchData();
     } catch (err) {
-      openNotif(err.response?.data?.error || 'Error al procesar la casa/propiedad');
+      openNotif(err.message || 'Error al procesar la casa/propiedad');
     }
   };
 
@@ -296,28 +461,56 @@ function App() {
         ...bankAccountForm,
         balance: parseLocalFloat(bankAccountForm.balance)
       };
-      await axios.post(`${API_URL}/bank-accounts`, payload);
+      const { error } = await supabase.from('bank_accounts').insert(payload);
+      if (error) throw error;
       setBankAccountForm({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '' });
       setModals({ ...modals, bankAccount: false });
       fetchData();
     } catch (err) {
-      openNotif(err.response?.data?.error || 'Error al crear la cuenta bancaria');
+      openNotif(err.message || 'Error al crear la cuenta bancaria');
     }
   };
 
   const handleCreateService = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        ...serviceForm,
-        default_amount: parseLocalFloat(serviceForm.default_amount)
-      };
-      await axios.post(`${API_URL}/services`, payload);
+      const cost = parseLocalFloat(serviceForm.default_amount);
+      // 1. Insert service
+      const { data: service, error: servErr } = await supabase.from('services').insert({
+        name: serviceForm.name,
+        description: serviceForm.description,
+        default_amount: cost
+      }).select().single();
+      if (servErr) throw servErr;
+      const serviceId = service.id;
+
+      // 2. Get all properties
+      const { data: properties, error: propErr } = await supabase.from('properties').select('id');
+      if (propErr) throw propErr;
+
+      const amountPerHouse = properties.length > 0 ? (cost / properties.length) : 0;
+
+      // 3. Create debt rows for each property
+      const debtRows = properties.map(prop => ({
+        property_id: prop.id,
+        service_id: serviceId,
+        amount: amountPerHouse,
+        status: 'pending'
+      }));
+
+      if (debtRows.length > 0) {
+        const { error: debtErr } = await supabase.from('debts').insert(debtRows);
+        if (debtErr) {
+          await supabase.from('services').delete().eq('id', serviceId);
+          throw debtErr;
+        }
+      }
+
       setServiceForm({ name: '', description: '', default_amount: '' });
       setModals({ ...modals, service: false });
       fetchData();
     } catch (err) {
-      openNotif(err.response?.data?.error || 'Error al crear el cobro/servicio');
+      openNotif(err.message || 'Error al crear el cobro/servicio');
     }
   };
 
@@ -398,13 +591,54 @@ function App() {
   const handleRegisterPayment = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        ...paymentForm,
-        amount_paid: parseLocalFloat(paymentForm.amount_paid),
-        commission: parseLocalFloat(paymentForm.commission),
-        exchange_rate: parseLocalFloat(paymentForm.exchange_rate)
-      };
-      const res = await axios.post(`${API_URL}/payments`, payload);
+      if (!paymentForm.debt_id || !paymentForm.bank_account_id || !paymentForm.amount_paid) {
+        throw new Error('Todos los campos son requeridos');
+      }
+
+      // 1. Get debt
+      const { data: debt, error: debtErr } = await supabase.from('debts').select('*').eq('id', paymentForm.debt_id).maybeSingle();
+      if (debtErr) throw debtErr;
+      if (!debt) throw new Error('Deuda no encontrada');
+      if (debt.status === 'paid') throw new Error('Esta deuda ya ha sido pagada');
+
+      // 2. Get bank account
+      const { data: account, error: accErr } = await supabase.from('bank_accounts').select('*').eq('id', paymentForm.bank_account_id).maybeSingle();
+      if (accErr) throw accErr;
+      if (!account) throw new Error('Cuenta bancaria no encontrada');
+
+      // 3. Update debt status
+      const { error: updateDebtErr } = await supabase.from('debts').update({ status: 'paid' }).eq('id', paymentForm.debt_id);
+      if (updateDebtErr) throw updateDebtErr;
+
+      // 4. Update bank account balance
+      const commissionVal = parseLocalFloat(paymentForm.commission);
+      const amountPaidVal = parseLocalFloat(paymentForm.amount_paid);
+      const netAmount = amountPaidVal - commissionVal;
+      const newBalance = account.balance + netAmount;
+      const { error: updateAccErr } = await supabase.from('bank_accounts').update({ balance: newBalance }).eq('id', paymentForm.bank_account_id);
+      if (updateAccErr) {
+        await supabase.from('debts').update({ status: 'pending' }).eq('id', paymentForm.debt_id);
+        throw updateAccErr;
+      }
+
+      // 5. Create payment
+      const { data: payment, error: payErr } = await supabase.from('payments').insert({
+        debt_id: parseInt(paymentForm.debt_id),
+        bank_account_id: parseInt(paymentForm.bank_account_id),
+        amount_paid: amountPaidVal,
+        payment_date: paymentForm.payment_date,
+        payment_method: paymentForm.payment_method,
+        reference_number: paymentForm.reference_number,
+        exchange_rate: parseLocalFloat(paymentForm.exchange_rate) || 1,
+        commission: commissionVal
+      }).select().single();
+
+      if (payErr) {
+        await supabase.from('bank_accounts').update({ balance: account.balance }).eq('id', paymentForm.bank_account_id);
+        await supabase.from('debts').update({ status: 'pending' }).eq('id', paymentForm.debt_id);
+        throw payErr;
+      }
+
       setPaymentForm({ 
         debt_id: '', 
         bank_account_id: '', 
@@ -413,32 +647,57 @@ function App() {
         payment_method: 'Pago Móvil',
         reference_number: '',
         exchange_rate: '',
-        commission: '0.00'
+        commission: '0,00'
       });
       setModals({ ...modals, payment: false });
       
-      // Highlight the updated account balance
-      const { account_name, new_account_balance, account_currency } = res.data;
       setBalanceAlert({
-        message: `¡Pago Registrado! El total disponible en la cuenta ${account_name} es ahora de ${formatVal(new_account_balance, account_currency)}`
+        message: `¡Pago Registrado! El total disponible en la cuenta ${account.bank_name} es ahora de ${formatVal(newBalance, account.currency)}`
       });
-      setTimeout(() => setBalanceAlert(null), 10000); // clear after 10s
+      setTimeout(() => setBalanceAlert(null), 10000);
       
       fetchData();
     } catch (err) {
-      openNotif(err.response?.data?.error || 'Error al registrar el pago');
+      openNotif(err.message || 'Error al registrar el pago');
     }
   };
 
   const handleRegisterExpense = async (e) => {
     e.preventDefault();
     try {
-      const payload = {
-        ...expenseForm,
-        amount: parseLocalFloat(expenseForm.amount),
-        commission: parseLocalFloat(expenseForm.commission)
-      };
-      const res = await axios.post(`${API_URL}/expenses`, payload);
+      if (!expenseForm.bank_account_id || !expenseForm.amount || !expenseForm.description) {
+        throw new Error('Todos los campos son requeridos');
+      }
+
+      // 1. Get bank account
+      const { data: account, error: accErr } = await supabase.from('bank_accounts').select('*').eq('id', expenseForm.bank_account_id).maybeSingle();
+      if (accErr) throw accErr;
+      if (!account) throw new Error('Cuenta bancaria no encontrada');
+
+      const expenseAmount = parseLocalFloat(expenseForm.amount);
+      const commissionVal = parseLocalFloat(expenseForm.commission);
+
+      // 2. Update balance
+      const newBalance = account.balance - (expenseAmount + commissionVal);
+      const { error: updateAccErr } = await supabase.from('bank_accounts').update({ balance: newBalance }).eq('id', expenseForm.bank_account_id);
+      if (updateAccErr) throw updateAccErr;
+
+      // 3. Create expense record
+      const { data: expense, error: expErr } = await supabase.from('expenses').insert({
+        bank_account_id: parseInt(expenseForm.bank_account_id),
+        description: expenseForm.description,
+        amount: expenseAmount,
+        expense_date: expenseForm.expense_date,
+        reference_number: expenseForm.reference_number,
+        payment_method: expenseForm.payment_method || 'Transferencia',
+        commission: commissionVal
+      }).select().single();
+
+      if (expErr) {
+        await supabase.from('bank_accounts').update({ balance: account.balance }).eq('id', expenseForm.bank_account_id);
+        throw expErr;
+      }
+
       setExpenseForm({ 
         bank_account_id: '', 
         description: '', 
@@ -450,15 +709,14 @@ function App() {
       });
       setModals({ ...modals, expense: false });
       
-      const { account_name, new_account_balance, account_currency } = res.data;
       setBalanceAlert({
-        message: `¡Egreso Registrado! El total disponible en la cuenta ${account_name} es ahora de ${formatVal(new_account_balance, account_currency)}`
+        message: `¡Egreso Registrado! El total disponible en la cuenta ${account.bank_name} es ahora de ${formatVal(newBalance, account.currency)}`
       });
       setTimeout(() => setBalanceAlert(null), 10000);
       
       fetchData();
     } catch (err) {
-      openNotif(err.response?.data?.error || 'Error al registrar el gasto');
+      openNotif(err.message || 'Error al registrar el gasto');
     }
   };
 
@@ -496,10 +754,11 @@ function App() {
       '¿Seguro que deseas eliminar esta propiedad? Se borrarán todas sus deudas asociadas.',
       async () => {
         try {
-          await axios.delete(`${API_URL}/properties/${id}`);
+          const { error } = await supabase.from('properties').delete().eq('id', id);
+          if (error) throw error;
           fetchData();
         } catch (err) {
-          openNotif('Error al eliminar la propiedad');
+          openNotif(err.message || 'Error al eliminar la propiedad');
         }
       }
     );
@@ -510,10 +769,11 @@ function App() {
       '¿Seguro que deseas eliminar esta cuenta bancaria?',
       async () => {
         try {
-          await axios.delete(`${API_URL}/bank-accounts/${id}`);
+          const { error } = await supabase.from('bank_accounts').delete().eq('id', id);
+          if (error) throw error;
           fetchData();
         } catch (err) {
-          openNotif(err.response?.data?.error || 'Error al eliminar la cuenta bancaria');
+          openNotif(err.message || 'Error al eliminar la cuenta bancaria');
         }
       }
     );
@@ -524,10 +784,11 @@ function App() {
       '¿Seguro que deseas eliminar este cobro/servicio? Se eliminarán todas las deudas pendientes asociadas.',
       async () => {
         try {
-          await axios.delete(`${API_URL}/services/${id}`);
+          const { error } = await supabase.from('services').delete().eq('id', id);
+          if (error) throw error;
           fetchData();
         } catch (err) {
-          openNotif('Error al eliminar el servicio');
+          openNotif(err.message || 'Error al eliminar el servicio');
         }
       }
     );
