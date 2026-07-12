@@ -24,10 +24,10 @@ import { createClient } from '@supabase/supabase-js';
 
 ChartJS.register(ArcElement, Tooltip, Legend, CategoryScale, LinearScale, BarElement);
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://hulaqkvbbzdrailrcoih.supabase.co';
-const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh1bGFxa3ZiYnpkcmFpbHJjb2loIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4Mzc5MzE3MiwiZXhwIjoyMDk5MzY5MTcyfQ.tYZTXteH4AHVLcfcurGbjh-B03hHbJQ7eIfg4fIK4M0';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(supabaseUrl || '', supabaseKey || '');
 
 const parseLocalFloat = (val) => {
   if (typeof val === 'number') return val;
