@@ -400,7 +400,7 @@ function App() {
     e.preventDefault();
     setLoginError('');
     try {
-      const { data: user, error } = await supabase.from('users').select('*').eq('username', loginForm.username).eq('password', loginForm.password).maybeSingle();
+      const { data: user, error } = await supabase.from('administrators').select('*').eq('username', loginForm.username).eq('password', loginForm.password).maybeSingle();
       if (error) throw error;
       if (!user) {
         setLoginError('Credenciales incorrectas');
