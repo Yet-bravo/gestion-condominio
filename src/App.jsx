@@ -915,8 +915,8 @@ function App() {
         </div>
 
         <div style={{ background: 'hsl(var(--bg-surface-hover) / 0.5)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid hsl(var(--border-color))' }}>
-          <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-muted))' }}>Administrador</div>
-          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'white' }}>{currentUser.name}</div>
+          <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>Administrador</div>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'hsl(var(--text-primary))' }}>{currentUser.name}</div>
           <div style={{ fontSize: '0.8rem', color: 'hsl(var(--primary))' }}>{currentUser.house_number}</div>
         </div>
         
@@ -989,14 +989,14 @@ function App() {
                   <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))', fontWeight: 600 }}>Rango:</span>
                   <input 
                     type="date" 
-                    style={{ background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'white', fontSize: '0.85rem' }}
+                    style={{ background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'hsl(var(--text-primary))', fontSize: '0.85rem' }}
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                   />
                   <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>al</span>
                   <input 
                     type="date" 
-                    style={{ background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'white', fontSize: '0.85rem' }}
+                    style={{ background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'hsl(var(--text-primary))', fontSize: '0.85rem' }}
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
@@ -1016,7 +1016,7 @@ function App() {
                   <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))', fontWeight: 600 }}>Tasa BCV:</span>
                   <input 
                     type="text" 
-                    style={{ width: '60px', background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'white', fontWeight: '700', fontSize: '0.9rem', textAlign: 'center', cursor: 'not-allowed', opacity: 0.85 }}
+                    style={{ width: '60px', background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'hsl(var(--text-primary))', fontWeight: '700', fontSize: '0.9rem', textAlign: 'center', cursor: 'not-allowed', opacity: 0.85 }}
                     value={bcvRate}
                     readOnly
                   />
