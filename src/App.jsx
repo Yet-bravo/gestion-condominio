@@ -75,6 +75,19 @@ const maskCurrency = (value) => {
   }).format(num);
 };
 
+const VENEZUELAN_BANKS = [
+  'Banco de Venezuela',
+  'Banesco',
+  'Mercantil',
+  'Provincial (BBVA)',
+  'BNC (Banco Nacional de Crédito)',
+  'Bancaribe',
+  'Banco Exterior',
+  'Banplus',
+  'Banco del Tesoro',
+  'Banco Bicentenario'
+];
+
 function App() {
   // Theme state
   const [theme, setTheme] = useState(() => {
@@ -186,20 +199,22 @@ function App() {
 
   // Forms
   const [propertyForm, setPropertyForm] = useState({ apartment_code: '', owner_name: '', phone: '' });
-  const [bankAccountForm, setBankAccountForm] = useState({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '', commission_percentage: '0,30', minimum_commission: '2,00' });
+  const [bankAccountForm, setBankAccountForm] = useState({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '' });
   const [serviceForm, setServiceForm] = useState({ name: '', description: '', default_amount: '' });
   const [paymentForm, setPaymentForm] = useState({ 
     debt_id: '', 
     bank_account_id: '', 
+    sender_bank: '',
     amount_paid: '', 
     payment_date: new Date().toISOString().split('T')[0], 
     payment_method: 'Pago Móvil',
     reference_number: '',
     exchange_rate: '',
-    commission: '0.00'
+    commission: '0,00'
   });
   const [expenseForm, setExpenseForm] = useState({ 
     bank_account_id: '', 
+    receiver_bank: '',
     description: '', 
     amount: '', 
     expense_date: new Date().toISOString().split('T')[0], 
@@ -459,13 +474,11 @@ function App() {
     try {
       const payload = {
         ...bankAccountForm,
-        balance: parseLocalFloat(bankAccountForm.balance),
-        commission_percentage: parseLocalFloat(bankAccountForm.commission_percentage),
-        minimum_commission: parseLocalFloat(bankAccountForm.minimum_commission)
+        balance: parseLocalFloat(bankAccountForm.balance)
       };
       const { error } = await supabase.from('bank_accounts').insert(payload);
       if (error) throw error;
-      setBankAccountForm({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '', commission_percentage: '0,30', minimum_commission: '2,00' });
+      setBankAccountForm({ bank_name: '', account_number: '', account_holder: '', currency: 'Bs', balance: '' });
       setModals({ ...modals, bankAccount: false });
       fetchData();
     } catch (err) {
@@ -516,20 +529,46 @@ function App() {
     }
   };
 
+  const calculateCommission = (method, amountStr, bankAccountId, otherBank) => {
+    const amount = parseLocalFloat(amountStr);
+    if (!amount || !bankAccountId || !otherBank) return 0;
+    
+    const account = bankAccounts.find(acc => acc.id === parseInt(bankAccountId));
+    if (!account) return 0;
+    
+    const clean = (str) => str.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const b1 = clean(account.bank_name);
+    const b2 = clean(otherBank);
+    const isSameBank = b1.includes(b2) || b2.includes(b1);
+    
+    if (isSameBank) return 0;
+    
+    if (method === 'Pago Móvil') {
+      return Math.max(2.00, amount * 0.003); // 0.3% min 2.00 Bs
+    } else if (method === 'Transferencia') {
+      return amount * 0.0012; // 0.12% for interbank transfer
+    }
+    return 0;
+  };
+
   const handlePaymentDebtChange = (debtId) => {
     const selectedDebt = debts.find(d => d.id === parseInt(debtId));
     if (selectedDebt) {
       const rate = parseFloat(paymentForm.exchange_rate) || 0;
       const computedAmount = rate ? (selectedDebt.amount * rate).toFixed(2) : '';
       
-      const val = parseFloat(computedAmount) || 0;
-      const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, paymentForm.payment_method);
+      const computedComm = calculateCommission(
+        paymentForm.payment_method,
+        computedAmount,
+        paymentForm.bank_account_id,
+        paymentForm.sender_bank
+      ).toFixed(2);
 
       setPaymentForm({
         ...paymentForm,
         debt_id: debtId,
         amount_paid: computedAmount ? maskCurrency(computedAmount) : '',
-        commission: computedComm ? maskCurrency(computedComm) : '0,00'
+        commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
       });
     } else {
       setPaymentForm({
@@ -541,62 +580,85 @@ function App() {
     }
   };
 
-  const calculateCommissionForAccount = (accountId, amountVal, method) => {
-    if (method !== 'Pago Móvil' || !amountVal) return '0.00';
-    const account = bankAccounts.find(acc => acc.id === parseInt(accountId));
-    const pct = account && account.commission_percentage !== undefined ? parseFloat(account.commission_percentage) / 100 : 0.003;
-    const min = account && account.minimum_commission !== undefined ? parseFloat(account.minimum_commission) : 2.00;
-    
-    return Math.max(min, amountVal * pct).toFixed(2);
-  };
-
   const handlePaymentRateChange = (rateStr) => {
     const rate = parseFloat(rateStr) || 0;
     const selectedDebt = debts.find(d => d.id === parseInt(paymentForm.debt_id));
     const computedAmount = (selectedDebt && rate) ? (selectedDebt.amount * rate).toFixed(2) : '';
     
-    const val = parseFloat(computedAmount) || 0;
-    const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, paymentForm.payment_method);
+    const computedComm = calculateCommission(
+      paymentForm.payment_method,
+      computedAmount,
+      paymentForm.bank_account_id,
+      paymentForm.sender_bank
+    ).toFixed(2);
 
     setPaymentForm({
       ...paymentForm,
       exchange_rate: rateStr,
       amount_paid: computedAmount ? maskCurrency(computedAmount) : '',
-      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
     });
   };
 
   const handlePaymentAmountChange = (amountStr) => {
     const masked = maskCurrency(amountStr);
     const val = parseLocalFloat(masked);
-    const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, paymentForm.payment_method);
+    const computedComm = calculateCommission(
+      paymentForm.payment_method,
+      val.toString(),
+      paymentForm.bank_account_id,
+      paymentForm.sender_bank
+    ).toFixed(2);
 
     setPaymentForm({
       ...paymentForm,
       amount_paid: masked,
-      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
     });
   };
 
   const handlePaymentMethodChange = (method) => {
-    const val = parseLocalFloat(paymentForm.amount_paid);
-    const computedComm = calculateCommissionForAccount(paymentForm.bank_account_id, val, method);
+    const computedComm = calculateCommission(
+      method,
+      paymentForm.amount_paid,
+      paymentForm.bank_account_id,
+      paymentForm.sender_bank
+    ).toFixed(2);
 
     setPaymentForm({
       ...paymentForm,
       payment_method: method,
-      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
     });
   };
 
-  const handlePaymentBankAccountChange = (bankAccountId) => {
-    const val = parseLocalFloat(paymentForm.amount_paid);
-    const computedComm = calculateCommissionForAccount(bankAccountId, val, paymentForm.payment_method);
+  const handlePaymentAccountChange = (bankAccountId) => {
+    const computedComm = calculateCommission(
+      paymentForm.payment_method,
+      paymentForm.amount_paid,
+      bankAccountId,
+      paymentForm.sender_bank
+    ).toFixed(2);
 
     setPaymentForm({
       ...paymentForm,
       bank_account_id: bankAccountId,
-      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
+    });
+  };
+
+  const handlePaymentSenderBankChange = (senderBank) => {
+    const computedComm = calculateCommission(
+      paymentForm.payment_method,
+      paymentForm.amount_paid,
+      paymentForm.bank_account_id,
+      senderBank
+    ).toFixed(2);
+
+    setPaymentForm({
+      ...paymentForm,
+      sender_bank: senderBank,
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
     });
   };
 
@@ -640,7 +702,7 @@ function App() {
         amount_paid: amountPaidVal,
         payment_date: paymentForm.payment_date,
         payment_method: paymentForm.payment_method,
-        reference_number: paymentForm.reference_number,
+        reference_number: paymentForm.reference_number + (paymentForm.sender_bank ? ` (${paymentForm.sender_bank})` : ''),
         exchange_rate: parseLocalFloat(paymentForm.exchange_rate) || 1,
         commission: commissionVal
       }).select().single();
@@ -654,6 +716,7 @@ function App() {
       setPaymentForm({ 
         debt_id: '', 
         bank_account_id: '', 
+        sender_bank: '',
         amount_paid: '', 
         payment_date: new Date().toISOString().split('T')[0], 
         payment_method: 'Pago Móvil',
@@ -697,7 +760,7 @@ function App() {
       // 3. Create expense record
       const { data: expense, error: expErr } = await supabase.from('expenses').insert({
         bank_account_id: parseInt(expenseForm.bank_account_id),
-        description: expenseForm.description,
+        description: expenseForm.description + (expenseForm.receiver_bank ? ` (${expenseForm.receiver_bank})` : ''),
         amount: expenseAmount,
         expense_date: expenseForm.expense_date,
         reference_number: expenseForm.reference_number,
@@ -712,6 +775,7 @@ function App() {
 
       setExpenseForm({ 
         bank_account_id: '', 
+        receiver_bank: '',
         description: '', 
         amount: '', 
         expense_date: new Date().toISOString().split('T')[0], 
@@ -735,29 +799,62 @@ function App() {
   const handleExpenseAmountChange = (amountStr) => {
     const masked = maskCurrency(amountStr);
     const val = parseLocalFloat(masked);
-    let computedComm = 0;
-    if (expenseForm.payment_method === 'Pago Móvil' && val) {
-      computedComm = Math.max(2.00, val * 0.003).toFixed(2);
-    }
+    const computedComm = calculateCommission(
+      expenseForm.payment_method,
+      val.toString(),
+      expenseForm.bank_account_id,
+      expenseForm.receiver_bank
+    ).toFixed(2);
 
     setExpenseForm({
       ...expenseForm,
       amount: masked,
-      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
     });
   };
 
   const handleExpenseMethodChange = (method) => {
-    let computedComm = 0;
-    const val = parseLocalFloat(expenseForm.amount);
-    if (method === 'Pago Móvil' && val) {
-      computedComm = Math.max(2.00, val * 0.003).toFixed(2);
-    }
+    const computedComm = calculateCommission(
+      method,
+      expenseForm.amount,
+      expenseForm.bank_account_id,
+      expenseForm.receiver_bank
+    ).toFixed(2);
 
     setExpenseForm({
       ...expenseForm,
       payment_method: method,
-      commission: computedComm ? maskCurrency(computedComm) : '0,00'
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
+    });
+  };
+
+  const handleExpenseAccountChange = (bankAccountId) => {
+    const computedComm = calculateCommission(
+      expenseForm.payment_method,
+      expenseForm.amount,
+      bankAccountId,
+      expenseForm.receiver_bank
+    ).toFixed(2);
+
+    setExpenseForm({
+      ...expenseForm,
+      bank_account_id: bankAccountId,
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
+    });
+  };
+
+  const handleExpenseReceiverBankChange = (receiverBank) => {
+    const computedComm = calculateCommission(
+      expenseForm.payment_method,
+      expenseForm.amount,
+      expenseForm.bank_account_id,
+      receiverBank
+    ).toFixed(2);
+
+    setExpenseForm({
+      ...expenseForm,
+      receiver_bank: receiverBank,
+      commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
     });
   };
 
@@ -1663,28 +1760,6 @@ function App() {
                   onChange={(e) => setBankAccountForm({ ...bankAccountForm, balance: maskCurrency(e.target.value) })}
                 />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Comisión Pago Móvil (%)</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="Ej: 0,30"
-                    value={bankAccountForm.commission_percentage}
-                    onChange={(e) => setBankAccountForm({ ...bankAccountForm, commission_percentage: e.target.value })}
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">Comisión Mínima (Bs.)</label>
-                  <input 
-                    type="text" 
-                    className="form-input" 
-                    placeholder="Ej: 2,00"
-                    value={bankAccountForm.minimum_commission}
-                    onChange={(e) => setBankAccountForm({ ...bankAccountForm, minimum_commission: e.target.value })}
-                  />
-                </div>
-              </div>
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setModals({ ...modals, bankAccount: false })}>Cancelar</button>
                 <button type="submit" className="btn btn-primary">Crear Cuenta</button>
@@ -1782,17 +1857,34 @@ function App() {
               </div>
               
               <div className="form-group">
-                <label className="form-label">Cuenta de Destino (Banco)</label>
+                <label className="form-label">Cuenta de Destino (Banco Admin)</label>
                 <select 
                   className="form-select" 
                   required
                   value={paymentForm.bank_account_id}
-                  onChange={(e) => handlePaymentBankAccountChange(e.target.value)}
+                  onChange={(e) => handlePaymentAccountChange(e.target.value)}
                 >
                   <option value="">-- Selecciona la cuenta bancaria --</option>
                   {bankAccounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
                       {acc.bank_name} ({acc.account_holder}) - Saldo: {formatVal(acc.balance, acc.currency)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Banco de Origen (Cliente/Propietario)</label>
+                <select 
+                  className="form-select" 
+                  required
+                  value={paymentForm.sender_bank}
+                  onChange={(e) => handlePaymentSenderBankChange(e.target.value)}
+                >
+                  <option value="">-- Selecciona el banco emisor --</option>
+                  {VENEZUELAN_BANKS.map((bank) => (
+                    <option key={bank} value={bank}>
+                      {bank}
                     </option>
                   ))}
                 </select>
@@ -1907,12 +1999,29 @@ function App() {
                   className="form-select" 
                   required
                   value={expenseForm.bank_account_id}
-                  onChange={(e) => setExpenseForm({ ...expenseForm, bank_account_id: e.target.value })}
+                  onChange={(e) => handleExpenseAccountChange(e.target.value)}
                 >
                   <option value="">-- Selecciona la cuenta bancaria --</option>
                   {bankAccounts.map((acc) => (
                     <option key={acc.id} value={acc.id}>
                       {acc.bank_name} ({acc.account_holder}) - Saldo: {formatVal(acc.balance, acc.currency)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Banco de Destino (Proveedor/Beneficiario)</label>
+                <select 
+                  className="form-select" 
+                  required
+                  value={expenseForm.receiver_bank}
+                  onChange={(e) => handleExpenseReceiverBankChange(e.target.value)}
+                >
+                  <option value="">-- Selecciona el banco de destino --</option>
+                  {VENEZUELAN_BANKS.map((bank) => (
+                    <option key={bank} value={bank}>
+                      {bank}
                     </option>
                   ))}
                 </select>
