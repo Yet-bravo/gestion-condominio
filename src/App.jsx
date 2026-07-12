@@ -1016,13 +1016,9 @@ function App() {
                   <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))', fontWeight: 600 }}>Tasa BCV:</span>
                   <input 
                     type="text" 
-                    style={{ width: '60px', background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'white', fontWeight: '700', fontSize: '0.9rem', textAlign: 'center' }}
+                    style={{ width: '60px', background: 'hsl(var(--bg-app))', border: '1px solid hsl(var(--border-color))', borderRadius: '4px', padding: '0.2rem 0.4rem', color: 'white', fontWeight: '700', fontSize: '0.9rem', textAlign: 'center', cursor: 'not-allowed', opacity: 0.85 }}
                     value={bcvRate}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setBcvRate(val);
-                      localStorage.setItem('condo_bcv_rate', val);
-                    }}
+                    readOnly
                   />
                   <span style={{ fontSize: '0.85rem', color: 'hsl(var(--text-secondary))' }}>Bs.</span>
                   <button 
