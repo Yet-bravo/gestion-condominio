@@ -794,6 +794,37 @@ function App() {
     );
   };
 
+  const handleDeleteExpense = (exp) => {
+    openConfirm(
+      '¿Seguro que deseas eliminar este egreso? Se reembolsará el monto total (egreso + comisión) al saldo disponible de la cuenta.',
+      async () => {
+        try {
+          const { data: account, error: accErr } = await supabase.from('bank_accounts').select('*').eq('id', exp.bank_account_id).maybeSingle();
+          if (accErr) throw accErr;
+          if (!account) throw new Error('Cuenta bancaria no encontrada');
+
+          const expenseAmount = parseFloat(exp.amount) || 0;
+          const commissionVal = parseFloat(exp.commission) || 0;
+          const totalRefund = expenseAmount + commissionVal;
+
+          const newBalance = account.balance + totalRefund;
+          const { error: updateAccErr } = await supabase.from('bank_accounts').update({ balance: newBalance }).eq('id', exp.bank_account_id);
+          if (updateAccErr) throw updateAccErr;
+
+          const { error: delErr } = await supabase.from('expenses').delete().eq('id', exp.id);
+          if (delErr) {
+            await supabase.from('bank_accounts').update({ balance: account.balance }).eq('id', exp.bank_account_id);
+            throw delErr;
+          }
+
+          fetchData();
+        } catch (err) {
+          openNotif(err.message || 'Error al eliminar el egreso');
+        }
+      }
+    );
+  };
+
   // Format currency functions
   const formatVal = (val, currency = 'Bs') => {
     const num = parseFloat(val) || 0;
@@ -1452,6 +1483,7 @@ function App() {
                       <th>Cuenta Origen</th>
                       <th>Referencia</th>
                       <th>Monto Debitado</th>
+                      <th style={{ textAlign: 'center' }}>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1464,11 +1496,21 @@ function App() {
                         <td style={{ fontWeight: '600', color: 'hsl(var(--accent-rose))' }}>
                           -{formatVal(exp.amount, exp.account_currency)}
                         </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ padding: '0.4rem', border: 'none', background: 'transparent', display: 'inline-flex', color: 'hsl(var(--accent-rose))', cursor: 'pointer' }}
+                            onClick={() => handleDeleteExpense(exp)}
+                            title="Eliminar egreso"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </td>
                       </tr>
                     ))}
                     {expenses.length === 0 && (
                       <tr>
-                        <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: 'hsl(var(--text-muted))' }}>
+                        <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'hsl(var(--text-muted))' }}>
                           No hay egresos registrados.
                         </td>
                       </tr>
