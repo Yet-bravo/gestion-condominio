@@ -1272,10 +1272,32 @@ function App() {
           </button>
         </div>
 
-        <div style={{ background: 'hsl(var(--bg-surface-hover) / 0.5)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid hsl(var(--border-color))' }}>
-          <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>Administrador</div>
-          <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'hsl(var(--text-primary))' }}>{currentUser.name}</div>
-          <div style={{ fontSize: '0.8rem', color: 'hsl(var(--primary))' }}>{currentUser.house_number}</div>
+        <div style={{ background: 'hsl(var(--bg-surface-hover) / 0.5)', padding: '0.75rem', borderRadius: 'var(--radius-md)', marginBottom: '1.5rem', border: '1px solid hsl(var(--border-color))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: '0.8rem', color: 'hsl(var(--text-secondary))' }}>Administrador</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'hsl(var(--text-primary))' }}>{currentUser.name}</div>
+            <div style={{ fontSize: '0.8rem', color: 'hsl(var(--primary))' }}>{currentUser.house_number}</div>
+          </div>
+          <button 
+            onClick={handleLogout}
+            title="Cerrar sesión"
+            style={{ 
+              background: 'transparent', 
+              border: 'none', 
+              color: 'hsl(var(--accent-rose))', 
+              cursor: 'pointer', 
+              padding: '0.5rem', 
+              borderRadius: '50%',
+              display: 'flex', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              transition: 'background-color 0.2s ease'
+            }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'hsl(var(--accent-rose) / 0.1)'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+          >
+            <LogOut size={18} />
+          </button>
         </div>
         
         <nav style={{ flexGrow: 1 }}>
