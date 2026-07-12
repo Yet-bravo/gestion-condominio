@@ -755,7 +755,12 @@ function App() {
       async () => {
         try {
           const { error } = await supabase.from('properties').delete().eq('id', id);
-          if (error) throw error;
+          if (error) {
+            if (error.code === '23503' || (error.message && error.message.toLowerCase().includes('foreign key constraint'))) {
+              throw new Error('No se puede eliminar esta propiedad porque tiene deudas que ya tienen pagos registrados. Debes eliminar primero los pagos asociados para poder borrarla.');
+            }
+            throw error;
+          }
           fetchData();
         } catch (err) {
           openNotif(err.message || 'Error al eliminar la propiedad');
@@ -770,7 +775,12 @@ function App() {
       async () => {
         try {
           const { error } = await supabase.from('bank_accounts').delete().eq('id', id);
-          if (error) throw error;
+          if (error) {
+            if (error.code === '23503' || (error.message && error.message.toLowerCase().includes('foreign key constraint'))) {
+              throw new Error('No se puede eliminar esta cuenta bancaria porque tiene transacciones asociadas (pagos o egresos). Para poder eliminarla, primero debes eliminar o reasignar dichos registros.');
+            }
+            throw error;
+          }
           fetchData();
         } catch (err) {
           openNotif(err.message || 'Error al eliminar la cuenta bancaria');
@@ -785,7 +795,12 @@ function App() {
       async () => {
         try {
           const { error } = await supabase.from('services').delete().eq('id', id);
-          if (error) throw error;
+          if (error) {
+            if (error.code === '23503' || (error.message && error.message.toLowerCase().includes('foreign key constraint'))) {
+              throw new Error('No se puede eliminar este cobro/servicio porque tiene deudas que ya tienen pagos registrados. Debes eliminar primero los pagos asociados para poder borrarlo.');
+            }
+            throw error;
+          }
           fetchData();
         } catch (err) {
           openNotif(err.message || 'Error al eliminar el servicio');
