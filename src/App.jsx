@@ -1588,7 +1588,6 @@ function App() {
                     <tr>
                       <th>Código</th>
                       <th>Copropietario</th>
-                      <th>Total Pagado</th>
                       <th>Acción</th>
                     </tr>
                   </thead>
@@ -1602,9 +1601,6 @@ function App() {
                         <tr key={prop.id}>
                           <td style={{ fontWeight: '600' }}>{prop.apartment_code}</td>
                           <td>{prop.owner_name}</td>
-                          <td style={{ fontWeight: '600', color: 'hsl(var(--accent-emerald))' }}>
-                            {formatVal(prop.total_paid, 'Bs')}
-                          </td>
                           <td>
                             <button className="btn btn-secondary" style={{ padding: '0.4rem 0.8rem' }} onClick={() => handleOpenEditProperty(prop)}>
                               <Edit size={16} /> Modificar Propietario
