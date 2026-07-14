@@ -406,9 +406,61 @@ function App() {
     }
   };
 
+  const fetchRateForDate = async (dateStr) => {
+    if (!dateStr) return null;
+    let current = new Date(dateStr + 'T12:00:00');
+    for (let i = 0; i < 5; i++) {
+      const year = current.getFullYear();
+      const month = String(current.getMonth() + 1).padStart(2, '0');
+      const day = String(current.getDate()).padStart(2, '0');
+      const formattedDate = `${year}/${month}/${day}`;
+      try {
+        const res = await fetch(`https://ve.dolarapi.com/v1/historicos/dolares/oficial/${formattedDate}`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.promedio) {
+            return data.promedio.toString();
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching rate for date:', formattedDate, err);
+      }
+      current.setDate(current.getDate() - 1);
+    }
+    return null;
+  };
+
   useEffect(() => {
     fetchData();
   }, [currentUser, startDate, endDate]);
+
+  useEffect(() => {
+    if (modals.payment && paymentForm.payment_date) {
+      const loadInitialRate = async () => {
+        const rate = await fetchRateForDate(paymentForm.payment_date);
+        if (rate) {
+          setPaymentForm(prev => {
+            const selectedDebt = debts.find(d => d.id === parseInt(prev.debt_id));
+            const rateNum = parseFloat(rate) || 0;
+            const computedAmount = (selectedDebt && rateNum) ? (selectedDebt.amount * rateNum).toFixed(2) : '';
+            const computedComm = calculateCommission(
+              prev.payment_method,
+              computedAmount,
+              prev.bank_account_id,
+              prev.sender_bank
+            ).toFixed(2);
+            return {
+              ...prev,
+              exchange_rate: rate,
+              amount_paid: computedAmount ? maskCurrency(computedAmount) : prev.amount_paid,
+              commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
+            };
+          });
+        }
+      };
+      loadInitialRate();
+    }
+  }, [modals.payment]);
 
   // Auth Handlers
   const handleLogin = async (e) => {
@@ -2190,7 +2242,30 @@ function App() {
                     className="form-input" 
                     required
                     value={paymentForm.payment_date}
-                    onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
+                    onChange={async (e) => {
+                      const newDate = e.target.value;
+                      setPaymentForm(prev => ({ ...prev, payment_date: newDate }));
+                      const rate = await fetchRateForDate(newDate);
+                      if (rate) {
+                        setPaymentForm(prev => {
+                          const selectedDebt = debts.find(d => d.id === parseInt(prev.debt_id));
+                          const rateNum = parseFloat(rate) || 0;
+                          const computedAmount = (selectedDebt && rateNum) ? (selectedDebt.amount * rateNum).toFixed(2) : '';
+                          const computedComm = calculateCommission(
+                            prev.payment_method,
+                            computedAmount,
+                            prev.bank_account_id,
+                            prev.sender_bank
+                          ).toFixed(2);
+                          return {
+                            ...prev,
+                            exchange_rate: rate,
+                            amount_paid: computedAmount ? maskCurrency(computedAmount) : prev.amount_paid,
+                            commission: computedComm && computedComm !== '0.00' ? maskCurrency(computedComm) : '0,00'
+                          };
+                        });
+                      }
+                    }}
                     max={new Date().toISOString().split('T')[0]}
                   />
                 </div>
