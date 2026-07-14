@@ -2227,7 +2227,7 @@ function App() {
                 </div>
               </div>
 
-              <div className="form-group" style={{ padding: '0.6rem 0.85rem', borderRadius: '0.5rem', background: 'hsl(var(--accent-emerald) / 0.08)', border: '1px solid hsl(var(--accent-emerald) / 0.2)', fontSize: '0.88rem', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div className="form-group" style={{ padding: '0.6rem 0.85rem', borderRadius: '0.5rem', background: 'hsl(var(--accent-emerald) / 0.08)', border: '1px solid hsl(var(--accent-emerald) / 0.2)', fontSize: '0.88rem', color: 'hsl(var(--text-primary))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: '500' }}>Monto Neto a Depositar:</span>
                 <span style={{ fontWeight: '700', fontSize: '1rem', color: 'hsl(var(--accent-emerald))' }}>
                   {formatVal(Math.max(0, parseLocalFloat(paymentForm.amount_paid) - parseLocalFloat(paymentForm.commission)), 'Bs')}
